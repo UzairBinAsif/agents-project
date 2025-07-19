@@ -51,7 +51,6 @@ def main():
         instructions=(
             "You provide a skill-building roadmap using the `get_career_roadmap` tool. You MUST call the `get_career_roadmap` tool with the user's chosen field. summarize the output clearly, then pass the result to the Job Agent."
         ),
-        handoffs=[job_agent],
         tools=[get_career_roadmap]
     )
 
@@ -64,17 +63,25 @@ def main():
             If the user is asking about job opportunities, pass it to the Job Agent.
             Otherwise, help them pick a field of interest"""
         ),
-        handoffs=[skill_agent, job_agent]
+        tools=[get_career_roadmap]
+    )
+    
+    career_mentor = Agent(
+        name='Career Mentor Agent', 
+        instructions=(
+            "You handoff to career, skills, job agent when asked by the user."
+        ),
+        handoffs=[career_agent, skill_agent, job_agent],
+        tools=[get_career_roadmap]
     )
     
     print("\n👋 Welcome to the Career Mentor Agent!")
     user_input = input("What career option are you curious about? (e.g., AI, web development, cybersecurity): ")
     
     result = Runner.run_sync(
-        career_agent,
+        career_mentor,
         user_input,
-        run_config=config,
-        max_turns=6
+        run_config=config
     )
     
     print('\n', result.final_output)
