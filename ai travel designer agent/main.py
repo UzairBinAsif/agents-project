@@ -195,7 +195,7 @@ def main():
             destination_agent,
             user_input,
             run_config=config,
-            max_turns=6
+            max_turns=10
         )
         
         print('\n', result.final_output)
