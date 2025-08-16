@@ -1,90 +1,35 @@
-import os
-from agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel, function_tool, handoff
-from agents.run import RunConfig
-from dotenv import load_dotenv
+import chainlit as cl
+from agents import Runner
+from agent_config.career_agent import career_agent
+from setup_config import config
 
-load_dotenv()
+@cl.on_chat_start
+async def start():
+    cl.user_session.set("history", [])
+    await cl.Message("Hi, I'm career mentor, how can I help you?").send()
 
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+@cl.on_message
+async def handle_message(msg: cl.Message):
+    history = cl.user_session.get("history", [])
+    history.append({"role": "user", "content": msg.content})
 
-if not gemini_api_key:
-    raise ValueError("GEMINI_API_KEY is not set. Please ensure it is defined in your .env file.")
-
-external_client = AsyncOpenAI(
-    api_key=gemini_api_key,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-)
-
-model = OpenAIChatCompletionsModel(
-    model="gemini-2.0-flash",
-    openai_client=external_client
-)
-
-config = RunConfig(
-    model=model,
-    model_provider=external_client,
-    tracing_disabled=True
-)
-
-@function_tool
-def get_career_roadmap(field: str) -> str:
-    """Generate a basic career skill roadmap based on a user's chosen field."""
-    roadmaps = {
-        "web development": "1. HTML & CSS\n2. JavaScript\n3. Frontend Frameworks (React/Vue)\n4. Backend (Node.js, Django)\n5. Databases\n6. DevOps",
-        "ai": "1. Python\n2. Math for ML (Linear Algebra, Stats)\n3. ML Basics (Scikit-learn)\n4. Deep Learning (TensorFlow, PyTorch)\n5. NLP & CV\n6. MLOps",
-        "data science": "1. Python\n2. Pandas, NumPy\n3. Data Visualization\n4. Statistics\n5. ML Models\n6. SQL & Big Data",
-        "cybersecurity": "1. Networking Basics\n2. Security Principles\n3. Tools (Wireshark, Nmap)\n4. Vulnerability Analysis\n5. Pen Testing\n6. Certifications"
-    }
-    field = field.lower()
-    return roadmaps.get(field, "Skill roadmap not available for this field.")
-
-def main():
-    job_agent = Agent(
-        name='Job Agent',
-        instructions=(
-            "You suggest real-world job roles based on the user's skills or chosen field. If the field is 'web development', suggest jobs like Frontend Developer, Backend Developer, etc. Keep your response brief and specific."
-        ),
-    )
-    
-    skill_agent = Agent(
-        name='Skill Agent',
-        instructions=(
-            "You provide a skill-building roadmap using the `get_career_roadmap` tool. You MUST call the `get_career_roadmap` tool with the user's chosen field. summarize the output clearly, then pass the result to the Job Agent."
-        ),
-        tools=[get_career_roadmap]
-    )
-
-    career_agent = Agent(
-        name='Career Agent', 
-        instructions=(
-            """You help the user explore career fields.
-            If the user mentions a specific field like 'web development', 'AI', or 'data science',
-            you pass the request to the Skill Agent.
-            If the user is asking about job opportunities, pass it to the Job Agent.
-            Otherwise, help them pick a field of interest"""
-        ),
-        tools=[get_career_roadmap]
-    )
-    
-    career_mentor = Agent(
-        name='Career Mentor Agent', 
-        instructions=(
-            "You handoff to career, skills, job agent when asked by the user."
-        ),
-        handoffs=[career_agent, skill_agent, job_agent],
-        tools=[get_career_roadmap]
-    )
-    
-    print("\n👋 Welcome to the Career Mentor Agent!")
-    user_input = input("What career option are you curious about? (e.g., AI, web development, cybersecurity): ")
-    
-    result = Runner.run_sync(
-        career_mentor,
-        user_input,
-        run_config=config
-    )
-    
-    print('\n', result.final_output)
-
-if __name__ == '__main__':
-    main()
+    thinking = cl.Message("Thinking...")
+    await thinking.send()
+    try:
+        result = await Runner.run(
+            career_agent,
+            history,
+            run_config=config
+        )
+        
+        output = result.final_output
+        
+        thinking.content = output
+        await thinking.update()
+        
+        history = result.to_input_list()
+        cl.user_session.set("history", history)
+        
+    except Exception as e:
+        thinking.content = f"Error: {e}"
+        await thinking.update()
